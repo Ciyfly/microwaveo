@@ -41,6 +41,11 @@ GLOBAL OPTIONS:
 ./microwaveo -i recar.dll -fn RunRecar -a x32
 ```
 
+### 捆绑白文件
+```
+./microwaveo -i recar.dll -fn RunRecar -w 白文件.exe
+```
+
 ### 使用garble混淆最后的exe
 ```
 ./microwaveo -i recar.dll -fn RunRecar --of
