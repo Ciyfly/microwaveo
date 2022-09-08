@@ -5,7 +5,9 @@
 1. 调用 go-donut 将dll/exe等转为shellcode
 2. 使用go模板构建shellcode的加载器 最后输出exe
 3. 也支持直接传入shellcode来构建最后的exe
-4. 最后的exe支持 garble混淆
+4. 默认是对shellcode文件进行随机aes key加密的
+5. 支持白文件捆绑 运行最后的exe会执行shellcode并运行白文件
+6. 最后的exe支持 garble混淆
 
 ## 注意
 **因为是使用go 构建exe所以需要go的环境**
